@@ -1,9 +1,7 @@
 ﻿using DeleteFromGridFSTest.Data;
-using Microsoft.AspNetCore.Mvc;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using MongoDB.Driver.GridFS;
-using System.Collections;
 
 namespace DeleteFromGridFSTest.Services
 {
@@ -48,6 +46,7 @@ namespace DeleteFromGridFSTest.Services
             }
             return false;
         }
+
         /// <summary>
         /// Returns empty string on Error
         /// </summary>
@@ -90,7 +89,6 @@ namespace DeleteFromGridFSTest.Services
 
             return results;
         }
-
 
         public bool UploadImageData(byte[] data, string fileName)
         {
@@ -151,8 +149,6 @@ namespace DeleteFromGridFSTest.Services
             {
                 using (var cursor = UploadedPicsBucket.Find(filter))
                 {
-                    //var fileInfo = cursor.ToList().FirstOrDefault();
-                    // fileInfo either has the matching file information or is null
                     var fileInfo = cursor.ToList();
                     foreach (var file in fileInfo)
                     {
@@ -181,30 +177,10 @@ namespace DeleteFromGridFSTest.Services
             {
                 if (!string.IsNullOrEmpty(idOfImageFile))
                 {
-                    ObjectId rawDataIdAsObj = new ObjectId(idOfImageFile);
+                    ObjectId rawDataIdAsObj = new(idOfImageFile);
 
                     var tsk = UploadedPicsBucket.DeleteAsync(rawDataIdAsObj);
                     tsk.Wait();
-
-                    // First delete the data file pointed to by the ImageFile
-                    // var tsk =
-                //    UploadedPicsBucket.DeleteAsync(rawDataId);  // this just hangs for some reason
-                    //       UploadedPicsBucket.Delete(rawDataId);                  // this also just hangs
-                    //var tsk = UploadedPicsBucket.Delete(rawDataIdAsObj); 
-                    //var tsk2 = 
-
-                    //ObjectId rawDataIdAsObj = new ObjectId(rawDataId);
-                    //var bb = BsonValue(rawDataIdAsObj);
-                    //;
-
-                    //await tsk;
-
-                    //if (tsk.IsCompleted)
-                    //{
-                    //    var dbg = tsk.Id;
-                    //}
-
-
                 }
             }
             catch (Exception ex)

@@ -1,12 +1,13 @@
 ﻿@page "/"
-@using System.Threading.Tasks
 @rendermode InteractiveServer
-
-@implements IAsyncDisposable
 
 @inject IOpovDbAccessService _iOpovDbAccessService
 @inject IJSRuntime _iJS;
 @inject IWebHostEnvironment Environment
+
+@implements IAsyncDisposable
+
+@using System.Threading.Tasks
 
 @if (!string.IsNullOrEmpty(statusMessage))
 {
