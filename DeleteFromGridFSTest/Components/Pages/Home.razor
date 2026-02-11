@@ -1,0 +1,328 @@
+﻿@page "/"
+@using System.Threading.Tasks
+@rendermode InteractiveServer
+
+@implements IAsyncDisposable
+
+@inject IOpovDbAccessService _iOpovDbAccessService
+@inject IJSRuntime _iJS;
+@inject IWebHostEnvironment Environment
+
+@if (!string.IsNullOrEmpty(statusMessage))
+{
+    <p>Status Message: @statusMessage</p>
+}
+@* <p>
+    <button @onclick="RefreshContactListAsync">
+       Refresh View of Contacts
+    </button>
+</p> *@
+<p>List of Contacts</p>
+<Virtualize  Items="@ListOfContacts" >
+    <ItemContent>
+        <em>@context.LastName</em>, @context.FirstName (@context.Id)
+        <hr />
+    </ItemContent>
+
+    <EmptyContent>Nothing here</EmptyContent>
+</Virtualize>
+<hr />
+<p>Delete a Contact from MongoDB collection</p>
+<p>
+    <label>
+        ID of Contact to Delete:
+        <input type="text" @bind="IdOfContactToDelete" />
+    </label>
+</p>
+<p>
+    <button @onclick="DeleteContact">
+        Delete Contact from Collection
+    </button>
+</p>
+<hr />
+<p>Create a new Contact</p>
+<EditForm Model="ContactModel" OnSubmit="SubmitClick">
+    <div>
+        <label>
+            First Name:
+            <InputText @bind-Value="ContactModel.FirstName" />
+        </label>
+    </div>
+    <div>
+        <label>
+            Last Name:
+            <InputTextArea @bind-Value="ContactModel.LastName" />
+        </label>
+    </div>
+    <div>
+        <label>
+            Phone #:
+            <InputTextArea @bind-Value="ContactModel.PhoneNumber" />
+        </label>
+    </div>
+    <div>
+        <button type="submit">Save Contact to Collection</button>
+    </div>
+</EditForm>
+
+<hr />
+<p>Select JPG (files) AND UPLOAD to GridFS</p>
+<p>
+    <label>
+        Upload files:
+        <InputFile OnChange="LoadFilesWithMsInputFile" multiple />
+    </label>
+</p>
+<hr />
+<p></p>
+<p> View Image from DB</p>
+<div class="p-3">
+    <img id="imageElemId1" />
+</div>
+
+<p>
+    <label>
+        ID of Image to view:
+        <input type="text" @bind="IdOfImageToView" />
+    </label>
+</p>
+<p>
+    <button @onclick="OnClickRetrieveImage">
+        View Image
+    </button>
+</p>
+
+@* <p>
+    <button @onclick="RefreshImgListAsync">
+        Refresh View of records
+    </button>
+</p> *@
+<p>List of Image files in GridFS</p>
+<Virtualize Items="@ListOfImageFilesInfo">
+    <ItemContent>
+        <em>@context.Item1</em>, @context.Item2
+        <hr />
+    </ItemContent>
+
+    <EmptyContent>No Img files found</EmptyContent>
+</Virtualize>
+<hr />
+
+<p>Delete an Image from MongoDB GridFS</p>
+<p>
+    <label>
+        ID of Image (jpg) to Delete:
+        <input type="text" @bind="IdOfImageToDelete" />
+    </label>
+</p>
+<p>
+    <button @onclick="DeleteImageFromGridFS">
+        Delete Img from GridFS
+    </button>
+</p>
+
+@code{
+    private IJSObjectReference? jsModule;
+    Contact ContactModel = new Contact();
+
+    List<Contact> ListOfContacts = [];
+    private List<IBrowserFile> loadedFiles = [];
+
+    List<(string, string)> ListOfImageFilesInfo = [];
+
+    private string statusMessage = "";
+
+    private long maxFileSize = 1024 * 1024 * 15; 
+    private int maxAllowedFiles = 3;
+
+
+    private string IdOfContactToDelete = "";
+    private string IdOfImageToView = "";
+    private string IdOfImageToDelete = "";
+
+    protected async override Task OnInitializedAsync()
+    {
+        RefreshContactListAsync();
+        RefreshImgListAsync();
+    }
+
+    protected async override Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            jsModule = await _iJS.InvokeAsync<IJSObjectReference>("import", "./Components/Pages/Home.razor.js");
+
+        }
+    }
+
+    async ValueTask IAsyncDisposable.DisposeAsync()
+    {
+        if (jsModule is not null)
+        {
+            try
+            {
+                await jsModule.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+    }
+
+    // The LoadFilesWithMsInputFile method is using a temp file location in wwwroot to load the file
+    // before using it in MongoDb. It is connected to the MS version of InputFile.
+    // But I'm going to use the OnClickUpload method which uses the Radzen version of InputFile.
+
+    private async Task LoadFilesWithMsInputFile(InputFileChangeEventArgs e)
+    {
+        loadedFiles.Clear();
+
+        foreach (var file in e.GetMultipleFiles(maxAllowedFiles))
+        {
+            try
+            {
+                byte[] byteBuffer = new byte[file.Size]; // size of the file
+                MemoryStream memStream = new MemoryStream(byteBuffer, 0, (int)file.Size, true, true);
+
+                Stream readStream = file.OpenReadStream(maxFileSize);
+
+                await readStream.CopyToAsync(memStream); // copy bytes from file into MemoryStream
+
+                byte[] fileBytes = memStream.GetBuffer(); // retrieve the byte[] of MemoryStream
+                if (fileBytes is not null)
+                {
+                    _iOpovDbAccessService.UploadImageData(fileBytes, file.Name);
+                }
+                loadedFiles.Add(file);
+
+                Console.WriteLine($"file {file.Name} was saved");
+                RefreshImgListAsync();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("File: {Filename} Error: {Error}",
+                    file.Name, ex.Message);
+            }
+        }
+    }
+
+    private void SubmitClick()
+    {
+        statusMessage = "Submit Was Clicked";
+        _iOpovDbAccessService.AddContact(ContactModel);
+        ClearContactFields();
+        RefreshContactListAsync();
+    }
+
+    private void ClearContactFields()
+    {
+        ContactModel = new Contact(); // clear the fields
+    }
+
+    private async Task DeleteContact()
+    {
+        statusMessage = "Delete Contact Was Clicked";
+        if (!string.IsNullOrEmpty(IdOfContactToDelete))
+        {
+            string res = _iOpovDbAccessService.DeleteContact(IdOfContactToDelete);
+            if (string.IsNullOrEmpty(res))
+            {
+                statusMessage = "Error - nothing deleted";
+            }
+            else
+            {
+                statusMessage = res;                
+                IdOfContactToDelete = "";
+                RefreshContactListAsync();
+            }
+        }
+    }
+
+    private async void RefreshContactListAsync()
+    {
+        try
+        {
+            var list = await _iOpovDbAccessService.GetAllContactsAsync();
+
+            if (list.Count() > 0)
+            {
+                statusMessage = $"Num Contacts: {list.Count()}";
+                ListOfContacts = list;
+            }
+            else
+            {
+                statusMessage = "No Contacts found.";
+                ListOfContacts = [];
+            }
+            StateHasChanged();
+        }
+        catch(Exception e)
+        {
+            Console.WriteLine(e.Message);
+        }
+    }
+
+    private async void RefreshImgListAsync()
+    {
+        // ObjectId fileObjectId = ObjectId.Parse(dbRecordId);
+        // FilterDefinition<GridFSFileInfo<ObjectId>> filter = Builders<GridFSFileInfo<ObjectId>>.Filter.Eq(x => x.Id, fileObjectId);
+        FilterDefinition<GridFSFileInfo<ObjectId>> filter = Builders<GridFSFileInfo<ObjectId>>.Filter.Empty;
+
+        Task<List<(string, string)>> imageInfosList = _iOpovDbAccessService.GetImageFilesInfoListAsync();
+
+        imageInfosList.Wait();
+
+        if(imageInfosList.Result is not null)
+        {
+            ListOfImageFilesInfo = imageInfosList.Result;
+        }        
+    }
+
+    async Task OnClickRetrieveImage()
+    {
+        statusMessage = "";
+        if (!String.IsNullOrEmpty(IdOfImageToView))
+        {
+            try
+            {
+                var imageFileTask = await _iOpovDbAccessService.GetImageFileData(IdOfImageToView);
+
+                if (imageFileTask is not null && jsModule is not null)
+                {
+                    var imageFile = imageFileTask;
+                    if (imageFile is not null)
+                    {
+                        await jsModule.InvokeVoidAsync("setImageSourceAsByteArray", "imageElemId1", imageFile, "image/jpg");
+                        statusMessage = "Image source was SET.";    
+
+                        //StateHasChanged();
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.Message);
+            }
+        }
+    }
+
+    private async Task DeleteImageFromGridFS()
+    {
+        if (!string.IsNullOrEmpty(IdOfImageToDelete))
+        {
+            var result = _iOpovDbAccessService.DeleteImageFile(IdOfImageToDelete);
+            result.Wait();
+
+            if(result.Result == true)
+            {
+                statusMessage = $"Image {IdOfImageToDelete} was deleted";
+                RefreshImgListAsync();
+            }
+            else{
+                statusMessage = "Error - nothing deleted!!!!!!!";
+             }
+
+        }
+    }
+    
+}
